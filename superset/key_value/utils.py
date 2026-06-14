@@ -100,6 +100,11 @@ def _uuid_namespace_from_md5(seed: str) -> UUID:
     return UUID(md5_obj.hexdigest())
 
 
+def generate_cache_key(value: str) -> str:
+    """Generate a cache key for the given value."""
+    return hashlib.md5(value.encode("utf-8")).hexdigest()
+
+
 def _uuid_namespace_from_sha256(seed: str) -> UUID:
     """Generate UUID namespace from SHA-256 hash (first 16 bytes)."""
     sha256_obj = hashlib.sha256()
