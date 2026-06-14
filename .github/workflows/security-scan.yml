@@ -1,0 +1,145 @@
+name: Security Scan + Auto-Remediation
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to scan (use the PR head branch)"
+        required: true
+        type: string
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  security-scan:
+    name: security-scan
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        contains(github.event.comment.body, '/run-security-scan')
+      )
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Acknowledge slash-command trigger
+        if: github.event_name == 'issue_comment'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket',
+            });
+
+      - name: Resolve PR context
+        id: pr
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            let branch;
+            let prNumber;
+
+            if (context.eventName === 'issue_comment') {
+              prNumber = context.payload.issue.number;
+              const { data: pr } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: prNumber,
+              });
+              branch = pr.head.ref;
+            } else {
+              branch = context.payload.inputs.branch;
+              const { data: prs } = await github.rest.pulls.list({
+                owner,
+                repo,
+                head: `${owner}:${branch}`,
+                state: 'open',
+              });
+              if (!prs.length) {
+                core.setFailed(
+                  `No open PR found for branch '${branch}'. Open a PR first, then run this workflow.`,
+                );
+                return;
+              }
+              prNumber = prs[0].number;
+            }
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: prNumber,
+            });
+
+            core.setOutput('number', String(prNumber));
+            core.setOutput('branch', branch);
+            core.setOutput('head_sha', pr.head.sha);
+
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ steps.pr.outputs.head_sha }}
+          fetch-depth: 0
+
+      - name: Verify scan targets latest PR commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_NUMBER="${{ steps.pr.outputs.number }}"
+          SCANNED_SHA="${{ github.sha }}"
+          LATEST_SHA=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}" --jq '.head.sha')
+
+          echo "PR head SHA:  ${LATEST_SHA}"
+          echo "Scanned SHA:   ${SCANNED_SHA}"
+
+          if [ "${LATEST_SHA}" != "${SCANNED_SHA}" ]; then
+            echo "::error::This scan is stale. New commits were pushed after the workflow started."
+            echo "::error::Re-run the security scan on the latest commit (${LATEST_SHA:0:7})."
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d773a17c2c5c2c012b438bd9 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install bandit requests
+
+      - name: Run Bandit scan
+        run: bandit -r superset/ -f json -o bandit_results.json || true
+
+      - name: Post review and trigger Devin
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ steps.pr.outputs.branch }}
+          SCANNED_SHA: ${{ github.sha }}
+        run: python .github/scripts/process_findings.py
+
+      - name: Re-verify PR head has not moved during scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_NUMBER="${{ steps.pr.outputs.number }}"
+          SCANNED_SHA="${{ github.sha }}"
+          LATEST_SHA=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}" --jq '.head.sha')
+
+          if [ "${LATEST_SHA}" != "${SCANNED_SHA}" ]; then
+            echo "::error::New commits were pushed while the scan was running."
+            echo "::error::Re-run the security scan on the latest commit (${LATEST_SHA:0:7})."
+            exit 1
+          fi
