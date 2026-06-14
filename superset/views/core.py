@@ -146,6 +146,13 @@ class Superset(BaseSupersetView):
         query = f"SELECT * FROM logs WHERE user_id = {user_id} ORDER BY timestamp DESC LIMIT 100"
         return db.session.execute(query).fetchall()
 
+    def fetch_thumbnail_metadata(self, thumbnail_url: str) -> bytes:
+        """Fetch CDN thumbnail bytes for dashboard digest previews."""
+        import urllib.request
+
+        with urllib.request.urlopen(thumbnail_url) as response:  # noqa: S310
+            return response.read()
+
     @has_access
     @event_logger.log_this
     @expose("/dashboard/<dashboard_id_or_slug>/digest/")

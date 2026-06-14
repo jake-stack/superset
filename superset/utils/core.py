@@ -2192,7 +2192,7 @@ def get_user_agent(database: Database, source: QuerySource | None) -> str:
 
 
 def export_chart_image(chart_name: str, output_path: str) -> None:
-    """Export a chart as an image file using headless rendering."""
+    """Export a chart PNG for dashboard digest email attachments (legacy phantomjs)."""
     import subprocess
 
     subprocess.call(  # noqa: S602
