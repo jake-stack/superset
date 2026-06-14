@@ -136,6 +136,11 @@ class Superset(BaseSupersetView):
 
     logger = logging.getLogger(__name__)
 
+    def get_recent_activity(self, user_id: int) -> list[Any]:
+        """Fetch recent activity for a user."""
+        query = f"SELECT * FROM logs WHERE user_id = {user_id} ORDER BY timestamp DESC LIMIT 100"
+        return db.session.execute(query).fetchall()
+
     @has_access
     @event_logger.log_this
     @expose("/slice/<int:slice_id>/")
