@@ -18,6 +18,7 @@ permissions:
 jobs:
   security-scan:
     name: security-scan
+    timeout-minutes: 360
     if: |
       github.event_name == 'workflow_dispatch' ||
       (

@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 import requests
 
@@ -11,6 +12,11 @@ PR_NUMBER = os.environ["PR_NUMBER"]
 REPO = os.environ["REPO"]
 BRANCH = os.environ["BRANCH"]
 SCANNED_SHA = os.environ.get("SCANNED_SHA", "")
+
+DEVIN_API_BASE = "https://api.devin.ai/v1"
+DEVIN_POLL_INTERVAL_SECONDS = int(os.environ.get("DEVIN_POLL_INTERVAL_SECONDS", "30"))
+DEVIN_SESSION_TIMEOUT_SECONDS = int(os.environ.get("DEVIN_SESSION_TIMEOUT_SECONDS", "3600"))
+DEVIN_TERMINAL_STATUSES = {"blocked", "finished"}
 
 # Your 5 injected findings — filter to these for the demo
 TARGET_FINDINGS = [
@@ -81,7 +87,7 @@ def post_pr_review(findings):
 |----------|------|----------|-------------|---------------|
 {table}
 
-**Devin is now remediating each finding automatically.** This PR will be updated with fixes shortly. Do not merge until the security scan passes on the latest commit.{sha_note}
+**Devin is now remediating each finding sequentially.** This PR will be updated with fixes one at a time. Do not merge until the security scan passes on the latest commit.{sha_note}
 """
         event = "REQUEST_CHANGES"
 
@@ -98,7 +104,7 @@ def post_pr_review(findings):
     print(f"Posted PR review: {event}")
 
 
-def trigger_devin_session(finding):
+def trigger_devin_session(finding, index, total):
     filepath = finding["filename"].replace("./", "")
     code_snippet = finding.get("code", "").strip()
 
@@ -107,6 +113,8 @@ def trigger_devin_session(finding):
 ## Your Task
 Fix a security vulnerability that was detected by an automated scan on this PR.
 Commit your fix directly to the branch `{BRANCH}` in the repository `https://github.com/{REPO}`.
+
+This is remediation **{index} of {total}** in a sequential batch. Earlier fixes may already be on the branch — always sync before editing.
 
 ## Vulnerability Details
 - **Rule:** {finding["test_id"]}
@@ -121,20 +129,22 @@ Commit your fix directly to the branch `{BRANCH}` in the repository `https://git
 ```
 
 ## Instructions
-1. Navigate to `{filepath}` at line {finding["line_number"]}
-2. Fix the vulnerability described above
-3. Verify that running `bandit -r {filepath}` no longer reports {finding["test_id"]} on this code
-4. Commit the fix to branch `{BRANCH}` with message: `fix: remediate {finding["test_id"]} in {filepath}`
-5. Do not open a new PR — commit directly to the existing branch
+1. Clone or update the repo and run `git pull origin {BRANCH}` before making changes
+2. Navigate to `{filepath}` at line {finding["line_number"]}
+3. Fix the vulnerability described above
+4. Verify that running `bandit -r {filepath}` no longer reports {finding["test_id"]} on this code
+5. Commit the fix to branch `{BRANCH}` with message: `fix: remediate {finding["test_id"]} in {filepath}`
+6. Push to `{BRANCH}` and do not open a new PR
 
 ## Acceptance Criteria
+- [ ] Branch is up to date with `origin/{BRANCH}` before edits
 - [ ] {finding["test_id"]} no longer fires on the fixed code
 - [ ] Function signatures and behavior are unchanged
-- [ ] Fix is committed to branch `{BRANCH}`
+- [ ] Fix is committed and pushed to branch `{BRANCH}`
 """
 
     response = requests.post(
-        "https://api.devin.ai/v1/sessions",
+        f"{DEVIN_API_BASE}/sessions",
         headers={
             "Authorization": f"Bearer {DEVIN_API_KEY}",
             "Content-Type": "application/json",
@@ -145,8 +155,40 @@ Commit your fix directly to the branch `{BRANCH}` in the repository `https://git
     response.raise_for_status()
 
     session = response.json()
-    print(f"Devin session started for {finding['test_id']}: {session.get('session_id')}")
-    return session
+    session_id = session.get("session_id")
+    print(f"Devin session started for {finding['test_id']}: {session_id}")
+    return session_id
+
+
+def wait_for_devin_session(session_id, test_id):
+    """Block until Devin finishes so the next fix starts from an up-to-date branch."""
+    headers = {"Authorization": f"Bearer {DEVIN_API_KEY}"}
+    deadline = time.monotonic() + DEVIN_SESSION_TIMEOUT_SECONDS
+
+    while time.monotonic() < deadline:
+        response = requests.get(
+            f"{DEVIN_API_BASE}/sessions/{session_id}",
+            headers=headers,
+            timeout=30,
+        )
+        response.raise_for_status()
+        status = response.json()
+        status_enum = status.get("status_enum", "unknown")
+        print(f"Devin session {session_id} ({test_id}) status: {status_enum}")
+
+        if status_enum in DEVIN_TERMINAL_STATUSES:
+            if status_enum == "blocked":
+                raise RuntimeError(
+                    f"Devin session {session_id} for {test_id} is blocked and needs attention"
+                )
+            return status
+
+        time.sleep(DEVIN_POLL_INTERVAL_SECONDS)
+
+    raise TimeoutError(
+        f"Devin session {session_id} for {test_id} did not finish within "
+        f"{DEVIN_SESSION_TIMEOUT_SECONDS} seconds"
+    )
 
 
 def main():
@@ -155,8 +197,14 @@ def main():
 
     post_pr_review(findings)
 
-    for finding in findings:
-        trigger_devin_session(finding)
+    total = len(findings)
+    for index, finding in enumerate(findings, start=1):
+        session_id = trigger_devin_session(finding, index, total)
+        if session_id:
+            wait_for_devin_session(session_id, finding["test_id"])
+            print(f"Completed remediation {index}/{total} for {finding['test_id']}")
+        else:
+            raise RuntimeError(f"Devin did not return a session_id for {finding['test_id']}")
 
     if findings:
         print("Security findings detected — re-run this workflow after Devin remediates.")
