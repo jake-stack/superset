@@ -150,12 +150,10 @@ def remediation_already_attempted():
 
 
 def mark_remediation_attempted():
-    requests.post(
-        f"https://api.github.com/repos/{REPO}/issues/{PR_NUMBER}/comments",
-        headers=gh_headers(),
-        json={"body": REMEDIATION_MARKER},
-        timeout=30,
-    ).raise_for_status()
+    post_issue_comment(
+        "🔧 Devin remediation sessions complete. Re-scanning the branch for remaining findings...\n\n"
+        f"{REMEDIATION_MARKER}"
+    )
 
 
 def remediation_success_summary(resolved_count, total_count):
@@ -181,7 +179,8 @@ def post_pass_review(sha, resolved_count=None, total_count=None):
 
 def post_remediation_success_comment(resolved_count, total_count, sha):
     post_issue_comment(
-        f"✅ {remediation_success_summary(resolved_count, total_count)}{sha_note(sha)}"
+        f"✅ {remediation_success_summary(resolved_count, total_count)}{sha_note(sha)}\n\n"
+        f"{REMEDIATION_MARKER}"
     )
 
 
