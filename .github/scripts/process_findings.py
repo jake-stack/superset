@@ -226,19 +226,22 @@ def trigger_devin_session(finding, index, total):
     filepath = finding["filename"].replace("./", "")
     code_snippet = finding.get("code", "").strip()
 
-    prompt = f"""You are working on a pull request in a fork of Apache Superset.
+    prompt = f"""You are an automated security remediation agent working on a pull request in a fork of Apache Superset.
 
-## Your Task
-Fix a security vulnerability that was detected by an automated scan on this PR.
-Commit your fix directly to the branch `{BRANCH}` in the repository `https://github.com/{REPO}`.
-
-This is remediation **{index} of {total}** in a sequential batch. Earlier fixes may already be on the branch — always sync before editing.
-
-## Vulnerability Details
+## Scope — one finding only
+Fix **exactly one** vulnerability in this session:
 - **Rule:** {finding["test_id"]}
-- **Severity:** {finding["issue_severity"]}
 - **File:** `{filepath}`
 - **Line:** {finding["line_number"]}
+
+Do NOT fix any other findings. Other findings in this PR are handled by separate automated sessions after you finish.
+
+## Repository
+- Repo: `https://github.com/{REPO}`
+- Branch: `{BRANCH}`
+
+## Vulnerability Details
+- **Severity:** {finding["issue_severity"]}
 - **Description:** {finding["issue_text"]}
 
 ## Vulnerable Code
@@ -246,19 +249,21 @@ This is remediation **{index} of {total}** in a sequential batch. Earlier fixes 
 {code_snippet}
 ```
 
-## Instructions
+## Steps
 1. Clone or update the repo and run `git pull origin {BRANCH}` before making changes
-2. Navigate to `{filepath}` at line {finding["line_number"]}
-3. Fix the vulnerability described above
-4. Verify that running `bandit -r {filepath}` no longer reports {finding["test_id"]} on this code
-5. Commit the fix to branch `{BRANCH}` with message: `fix: remediate {finding["test_id"]} in {filepath}`
-6. Push to `{BRANCH}` and do not open a new PR
+2. Fix only `{finding["test_id"]}` at `{filepath}:{finding["line_number"]}`
+3. Verify `bandit -r {filepath}` no longer reports `{finding["test_id"]}` on that line
+4. Commit with message: `fix: remediate {finding["test_id"]} in {filepath}`
+5. Push to `{BRANCH}`
 
-## Acceptance Criteria
-- [ ] Branch is up to date with `origin/{BRANCH}` before edits
-- [ ] {finding["test_id"]} no longer fires on the fixed code
-- [ ] Function signatures and behavior are unchanged
-- [ ] Fix is committed and pushed to branch `{BRANCH}`
+## Critical rules
+1. Never ask questions. Never ask for user confirmation. Never wait for user messages.
+2. After the fix is pushed, **stop immediately**. Do not summarize other findings or offer next steps.
+3. Do your best with the information provided. Push the fix and stop.
+4. Do not open a new PR.
+
+## Done means done
+When the commit is pushed successfully, your work is complete. Exit silently — the CI pipeline will start the next remediation automatically.
 """
 
     response = requests.post(
@@ -415,13 +420,12 @@ def log_scan_session(
 
 
 def wait_for_devin_session(session_id, test_id):
-    headers = {"Authorization": f"Bearer {DEVIN_API_KEY}"}
     deadline = time.monotonic() + DEVIN_SESSION_TIMEOUT_SECONDS
 
     while time.monotonic() < deadline:
         response = requests.get(
             f"{DEVIN_API_BASE}/sessions/{session_id}",
-            headers=headers,
+            headers={"Authorization": f"Bearer {DEVIN_API_KEY}"},
             timeout=30,
         )
         response.raise_for_status()
@@ -429,10 +433,10 @@ def wait_for_devin_session(session_id, test_id):
         print(f"Devin session {session_id} ({test_id}) status: {status_enum}")
 
         if status_enum in DEVIN_TERMINAL_STATUSES:
-            if status_enum == "blocked":
-                raise RuntimeError(
-                    f"Devin session {session_id} for {test_id} is blocked and needs attention"
-                )
+            print(
+                f"Devin session {session_id} ({test_id}) ended with {status_enum}. "
+                "Continuing to next finding."
+            )
             return utc_now()
 
         time.sleep(DEVIN_POLL_INTERVAL_SECONDS)
@@ -469,6 +473,8 @@ def main():
     session_runs = {}
     total = len(findings)
     for index, finding in enumerate(findings, start=1):
+        if index > 1:
+            sync_pr_branch()
         started_at = utc_now()
         session_id = trigger_devin_session(finding, index, total)
         if not session_id:
