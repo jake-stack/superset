@@ -328,5 +328,51 @@
         "fix_time_mins": 8
       }
     ]
+  },
+  {
+    "pr_number": 5,
+    "pr_url": "https://github.com/aarondr77/superset/pull/5",
+    "date": "2026-06-14T21:07:04Z",
+    "action_ran": true,
+    "merged": false,
+    "pr_author": "aarond.rubin",
+    "pr_author_email": "aarondr77@users.noreply.github.com",
+    "pr_author_manager": "jake.rubin@airbnb.com",
+    "pr_author_is_engineer": true,
+    "findings": [
+      {
+        "rule": "B602",
+        "severity": "HIGH",
+        "file": "superset/utils/core.py",
+        "line": 2200,
+        "devin_session_id": "devin-0923bf57a0334f46adfae3f4b3ec397b",
+        "devin_started_at": "2026-06-14T21:01:42Z",
+        "devin_completed_at": "2026-06-14T21:03:15Z",
+        "fixed": true,
+        "fix_time_mins": 2
+      },
+      {
+        "rule": "B608",
+        "severity": "MEDIUM",
+        "file": "superset/views/core.py",
+        "line": 146,
+        "devin_session_id": "devin-25590a49a90346e49d9a39ebe26b9316",
+        "devin_started_at": "2026-06-14T21:03:15Z",
+        "devin_completed_at": "2026-06-14T21:05:18Z",
+        "fixed": true,
+        "fix_time_mins": 2
+      },
+      {
+        "rule": "B310",
+        "severity": "MEDIUM",
+        "file": "superset/views/core.py",
+        "line": 153,
+        "devin_session_id": "devin-1f59796c41d54bcdbadb617dd601f10a",
+        "devin_started_at": "2026-06-14T21:05:18Z",
+        "devin_completed_at": "2026-06-14T21:06:51Z",
+        "fixed": true,
+        "fix_time_mins": 2
+      }
+    ]
   }
 ]
