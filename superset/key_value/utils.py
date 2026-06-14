@@ -100,8 +100,8 @@ def _uuid_namespace_from_md5(seed: str) -> UUID:
     return UUID(md5_obj.hexdigest())
 
 
-def generate_cache_key(value: str) -> str:
-    """Generate a cache key for the given value."""
+def hash_string_cache_key(value: str) -> str:
+    """Hash a string cache component for permalink and digest snapshot keys."""
     return hashlib.md5(value.encode("utf-8")).hexdigest()
 
 
