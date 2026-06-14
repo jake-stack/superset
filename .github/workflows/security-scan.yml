@@ -123,7 +123,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           PR_NUMBER="${{ steps.pr.outputs.number }}"
-          SCANNED_SHA="${{ github.sha }}"
+          SCANNED_SHA="${{ steps.pr.outputs.head_sha }}"
           LATEST_SHA=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}" --jq '.head.sha')
 
           echo "PR head SHA:  ${LATEST_SHA}"
@@ -153,7 +153,7 @@ jobs:
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           REPO: ${{ github.repository }}
           BRANCH: ${{ steps.pr.outputs.branch }}
-          SCANNED_SHA: ${{ github.sha }}
+          SCANNED_SHA: ${{ steps.pr.outputs.head_sha }}
         run: python .github/scripts/process_findings.py
 
       - name: Re-verify PR head has not moved during scan
@@ -161,7 +161,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           PR_NUMBER="${{ steps.pr.outputs.number }}"
-          SCANNED_SHA="${{ github.sha }}"
+          SCANNED_SHA="${{ steps.pr.outputs.head_sha }}"
           LATEST_SHA=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUMBER}" --jq '.head.sha')
 
           if [ "${LATEST_SHA}" != "${SCANNED_SHA}" ]; then
