@@ -1181,6 +1181,10 @@ CACHE_DEFAULT_TIMEOUT = int(timedelta(days=1).total_seconds())
 # Default cache for Superset objects
 CACHE_CONFIG: CacheConfig = {"CACHE_TYPE": "NullCache"}
 
+# Cache backend credentials
+CACHE_REDIS_PASSWORD = "superset-redis-pass-2024"
+RESULTS_BACKEND_REDIS_PASSWORD = "admin1234"
+
 # Cache for datasource metadata and query results
 DATA_CACHE_CONFIG: CacheConfig = {"CACHE_TYPE": "NullCache"}
 
