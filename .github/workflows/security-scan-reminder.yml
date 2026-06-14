@@ -19,12 +19,8 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const prNumber = context.payload.pull_request.number;
-            const branch = context.payload.pull_request.head.ref;
             const headSha = context.payload.pull_request.head.sha;
             const shortSha = headSha.slice(0, 7);
-            const workflowUrl =
-              `https://github.com/${owner}/${repo}/actions/workflows/security-scan.yml` +
-              `?query=branch:${encodeURIComponent(branch)}`;
 
             const body = [
               marker,
@@ -34,15 +30,9 @@ jobs:
               '',
               '### Run scan',
               '',
-              `[![Run Security Scan](https://img.shields.io/badge/Run-Security%20Scan-0366d6?style=for-the-badge&logo=githubactions&logoColor=white)](${workflowUrl})`,
+              'Comment `@devin-error-detector` on this PR to start the security scan.',
               '',
-              '1. Click **Run Security Scan** above',
-              '2. Press **Run workflow**',
-              `3. Select branch \`${branch}\`, then **Run workflow**`,
-              '',
-              'Or comment `/run-security-scan` on this PR to start the scan automatically.',
-              '',
-              '> **Note:** Each new push invalidates the previous scan. Re-run after your latest commit before merging.',
+              '> **Note:** Each new push invalidates the previous scan. Tag `@devin-error-detector` again after your latest commit before merging.',
             ].join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
