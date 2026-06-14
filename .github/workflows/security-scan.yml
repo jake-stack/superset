@@ -13,7 +13,7 @@ on:
     types: [created]
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
   issues: write
 
@@ -156,4 +156,5 @@ jobs:
           REPO: ${{ github.repository }}
           BRANCH: ${{ steps.pr.outputs.branch }}
           SCANNED_SHA: ${{ steps.pr.outputs.head_sha }}
+          DEFAULT_BRANCH: master
         run: python .github/scripts/process_findings.py

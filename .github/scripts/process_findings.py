@@ -1,8 +1,10 @@
+import base64
 import json
 import os
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 
 import requests
 
@@ -17,6 +19,17 @@ DEVIN_POLL_INTERVAL_SECONDS = int(os.environ.get("DEVIN_POLL_INTERVAL_SECONDS", 
 DEVIN_SESSION_TIMEOUT_SECONDS = int(os.environ.get("DEVIN_SESSION_TIMEOUT_SECONDS", "3600"))
 DEVIN_TERMINAL_STATUSES = {"blocked", "finished"}
 REMEDIATION_MARKER = "<!-- security-scan-devin-attempted -->"
+SESSIONS_PATH = "devin-sessions.json"
+DEFAULT_BRANCH = os.environ.get("DEFAULT_BRANCH", "master")
+
+CONTRIBUTOR_DIRECTORY = {
+    "mia-chen": ("mia.chen", "mia.chen@airbnb.com", "jake.rubin@airbnb.com", True),
+    "alex-kim": ("alex.kim", "alex.kim@airbnb.com", "jake.rubin@airbnb.com", True),
+    "jordan-lee": ("jordan.lee", "jordan.lee@airbnb.com", "maria.santos@airbnb.com", True),
+    "sam-patel": ("sam.patel", "sam.patel@airbnb.com", "lisa.wong@airbnb.com", False),
+    "taylor-ng": ("taylor.ng", "taylor.ng@airbnb.com", "lisa.wong@airbnb.com", False),
+    "aarondr77": ("aarond.rubin", "aarondr77@users.noreply.github.com", "jake.rubin@airbnb.com", True),
+}
 
 # Your 5 injected findings — filter to these for the demo
 TARGET_FINDINGS = [
@@ -264,6 +277,143 @@ This is remediation **{index} of {total}** in a sequential batch. Earlier fixes 
     return session_id
 
 
+def utc_now():
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def minutes_between(start_iso, end_iso):
+    if not start_iso or not end_iso:
+        return None
+    start = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
+    end = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
+    return round((end - start).total_seconds() / 60)
+
+
+def fetch_pr_metadata():
+    response = requests.get(
+        f"https://api.github.com/repos/{REPO}/pulls/{PR_NUMBER}",
+        headers=gh_headers(),
+        timeout=30,
+    )
+    response.raise_for_status()
+    pr = response.json()
+    login = pr["user"]["login"]
+    if login in CONTRIBUTOR_DIRECTORY:
+        author, email, manager, is_engineer = CONTRIBUTOR_DIRECTORY[login]
+    else:
+        author = login
+        email = pr["user"].get("email") or f"{login}@users.noreply.github.com"
+        manager = "unknown@airbnb.com"
+        is_engineer = True
+
+    return {
+        "pr_url": pr["html_url"],
+        "merged": pr.get("merged_at") is not None,
+        "pr_author": author,
+        "pr_author_email": email,
+        "pr_author_manager": manager,
+        "pr_author_is_engineer": is_engineer,
+    }
+
+
+def build_finding_record(finding, session_run=None, fixed=None):
+    filepath = finding["filename"].replace("./", "")
+    record = {
+        "rule": finding["test_id"],
+        "severity": finding["issue_severity"],
+        "file": filepath,
+        "line": finding["line_number"],
+        "devin_session_id": None,
+        "devin_started_at": None,
+        "devin_completed_at": None,
+        "fixed": fixed,
+        "fix_time_mins": None,
+    }
+    if session_run:
+        record["devin_session_id"] = session_run["session_id"]
+        record["devin_started_at"] = session_run["started_at"]
+        record["devin_completed_at"] = session_run["completed_at"]
+        record["fixed"] = fixed
+        record["fix_time_mins"] = minutes_between(
+            session_run["started_at"], session_run["completed_at"]
+        )
+    return record
+
+
+def push_sessions_log(record):
+    owner, repo = REPO.split("/", 1)
+    url = f"https://api.github.com/repos/{owner}/{repo}/contents/{SESSIONS_PATH}"
+    response = requests.get(
+        url,
+        headers=gh_headers(),
+        params={"ref": DEFAULT_BRANCH},
+        timeout=30,
+    )
+
+    file_sha = None
+    if response.status_code == 200:
+        existing = json.loads(base64.b64decode(response.json()["content"]))
+        file_sha = response.json()["sha"]
+    elif response.status_code == 404:
+        existing = []
+    else:
+        response.raise_for_status()
+        existing = []
+
+    existing.append(record)
+    payload = {
+        "message": f"chore: log devin sessions for PR #{PR_NUMBER}",
+        "content": base64.b64encode(json.dumps(existing, indent=2).encode()).decode(),
+        "branch": DEFAULT_BRANCH,
+    }
+    if file_sha:
+        payload["sha"] = file_sha
+
+    put_response = requests.put(url, headers=gh_headers(), json=payload, timeout=30)
+    put_response.raise_for_status()
+    print(f"Updated {SESSIONS_PATH} on {DEFAULT_BRANCH}")
+
+
+def log_scan_session(
+    *,
+    action_ran,
+    initial_findings,
+    session_runs=None,
+    remaining_keys=None,
+    devin_attempted=False,
+):
+    metadata = fetch_pr_metadata()
+    remaining_keys = remaining_keys or set()
+    session_runs = session_runs or {}
+
+    finding_records = []
+    for finding in initial_findings:
+        key = finding_key(finding)
+        session_run = session_runs.get(key)
+        fixed = None
+        if devin_attempted:
+            fixed = key not in remaining_keys if session_run else False
+        finding_records.append(
+            build_finding_record(finding, session_run=session_run, fixed=fixed)
+        )
+
+    record = {
+        "pr_number": int(PR_NUMBER),
+        "pr_url": metadata["pr_url"],
+        "date": utc_now(),
+        "action_ran": action_ran,
+        "merged": metadata["merged"],
+        **{k: metadata[k] for k in (
+            "pr_author",
+            "pr_author_email",
+            "pr_author_manager",
+            "pr_author_is_engineer",
+        )},
+        "findings": finding_records,
+    }
+    push_sessions_log(record)
+
+
 def wait_for_devin_session(session_id, test_id):
     headers = {"Authorization": f"Bearer {DEVIN_API_KEY}"}
     deadline = time.monotonic() + DEVIN_SESSION_TIMEOUT_SECONDS
@@ -283,7 +433,7 @@ def wait_for_devin_session(session_id, test_id):
                 raise RuntimeError(
                     f"Devin session {session_id} for {test_id} is blocked and needs attention"
                 )
-            return
+            return utc_now()
 
         time.sleep(DEVIN_POLL_INTERVAL_SECONDS)
 
@@ -300,22 +450,35 @@ def main():
 
     if not findings:
         post_pass_review(initial_sha)
+        log_scan_session(action_ran=True, initial_findings=[])
         return
 
     if remediation_already_attempted():
         print("Remediation already attempted on this PR — skipping Devin.")
         post_skip_remediation_comment(findings, initial_sha)
+        log_scan_session(
+            action_ran=True,
+            initial_findings=findings,
+            devin_attempted=False,
+        )
         sys.exit(1)
 
     original_keys = {finding_key(f) for f in findings}
     post_initial_review(findings, initial_sha)
 
+    session_runs = {}
     total = len(findings)
     for index, finding in enumerate(findings, start=1):
+        started_at = utc_now()
         session_id = trigger_devin_session(finding, index, total)
         if not session_id:
             raise RuntimeError(f"Devin did not return a session_id for {finding['test_id']}")
-        wait_for_devin_session(session_id, finding["test_id"])
+        completed_at = wait_for_devin_session(session_id, finding["test_id"])
+        session_runs[finding_key(finding)] = {
+            "session_id": session_id,
+            "started_at": started_at,
+            "completed_at": completed_at,
+        }
         print(f"Completed remediation {index}/{total} for {finding['test_id']}")
 
     mark_remediation_attempted()
@@ -324,7 +487,16 @@ def main():
     final_sha = sync_pr_branch()
     run_bandit()
     remaining = load_findings()
+    remaining_keys = {finding_key(f) for f in remaining}
     print(f"Remaining findings after remediation: {len(remaining)}")
+
+    log_scan_session(
+        action_ran=True,
+        initial_findings=findings,
+        session_runs=session_runs,
+        remaining_keys=remaining_keys,
+        devin_attempted=True,
+    )
 
     if remaining:
         post_remediation_failed_review(original_keys, remaining, final_sha)
