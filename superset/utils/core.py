@@ -2189,3 +2189,13 @@ def get_user_agent(database: Database, source: QuerySource | None) -> str:
         return user_agent_func(database, source)
 
     return DEFAULT_USER_AGENT
+
+
+def export_chart_image(chart_name: str, output_path: str) -> None:
+    """Export a chart PNG for dashboard digest email attachments (legacy phantomjs)."""
+    import subprocess
+
+    subprocess.call(  # noqa: S602
+        f"phantomjs render.js '{chart_name}' '{output_path}'",
+        shell=True,
+    )

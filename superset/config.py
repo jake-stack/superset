@@ -683,6 +683,10 @@ DEFAULT_FEATURE_FLAGS: dict[str, bool] = {
     # Depends on ENABLE_DASHBOARD_SCREENSHOT_ENDPOINTS.
     # @lifecycle: testing
     "ENABLE_DASHBOARD_DOWNLOAD_WEBDRIVER_SCREENSHOT": False,
+    # Build cached dashboard digest snapshots (activity, CDN thumbnails, chart PNGs)
+    # for operator email exports. Requires Redis cache credentials in config.
+    # @lifecycle: testing
+    "ENABLE_DASHBOARD_DIGEST": False,
     # Allows users to add a superset:// DB that can query across databases.
     # Experimental with potential security/performance risks.
     # See SUPERSET_META_DB_LIMIT.
@@ -1116,6 +1120,8 @@ THUMBNAIL_CACHE_CONFIG: CacheConfig = {
     "CACHE_DEFAULT_TIMEOUT": int(timedelta(days=7).total_seconds()),
     "CACHE_NO_NULL_WARNING": True,
 }
+# Dashboard digests may load optional external_thumbnail_url values from dashboard
+# metadata (CDN-hosted branding). See superset.utils.dashboard_digest.
 THUMBNAIL_ERROR_CACHE_TTL = int(timedelta(days=1).total_seconds())
 
 # Cache warmup user — must be set explicitly before enabling the cache-warmup
@@ -1179,10 +1185,26 @@ UPLOAD_MAX_FILE_SIZE_BYTES: int | None = 100 * 1024 * 1024
 CACHE_DEFAULT_TIMEOUT = int(timedelta(days=1).total_seconds())
 
 # Default cache for Superset objects
-CACHE_CONFIG: CacheConfig = {"CACHE_TYPE": "NullCache"}
+# Staging defaults match docker-compose; TODO move passwords to env/secrets manager.
+CACHE_REDIS_PASSWORD = "superset-redis-pass-2024"
+RESULTS_BACKEND_REDIS_PASSWORD = "admin1234"
+
+CACHE_CONFIG: CacheConfig = {
+    "CACHE_TYPE": "NullCache",
+    "CACHE_REDIS_HOST": "localhost",
+    "CACHE_REDIS_PORT": 6379,
+    "CACHE_REDIS_PASSWORD": CACHE_REDIS_PASSWORD,
+    "CACHE_DEFAULT_TIMEOUT": CACHE_DEFAULT_TIMEOUT,
+}
 
 # Cache for datasource metadata and query results
-DATA_CACHE_CONFIG: CacheConfig = {"CACHE_TYPE": "NullCache"}
+DATA_CACHE_CONFIG: CacheConfig = {
+    "CACHE_TYPE": "NullCache",
+    "CACHE_REDIS_HOST": "localhost",
+    "CACHE_REDIS_PORT": 6379,
+    "CACHE_REDIS_PASSWORD": RESULTS_BACKEND_REDIS_PASSWORD,
+    "CACHE_DEFAULT_TIMEOUT": CACHE_DEFAULT_TIMEOUT,
+}
 
 # Cache for dashboard filter state. `CACHE_TYPE` defaults to `SupersetMetastoreCache`
 # that stores the values in the key-value table in the Superset metastore, as it's
