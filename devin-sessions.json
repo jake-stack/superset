@@ -374,5 +374,73 @@
         "fix_time_mins": 2
       }
     ]
+  },
+  {
+    "pr_number": 1,
+    "pr_url": "https://github.com/jake-stack/superset/pull/1",
+    "date": "2026-06-15T04:20:52Z",
+    "action_ran": true,
+    "merged": false,
+    "pr_author": "jake-stack",
+    "pr_author_email": "jake-stack@users.noreply.github.com",
+    "pr_author_manager": "unknown@airbnb.com",
+    "pr_author_is_engineer": true,
+    "findings": [
+      {
+        "rule": "B324",
+        "severity": "HIGH",
+        "file": "superset/key_value/utils.py",
+        "line": 98,
+        "devin_session_id": "devin-dbe1a7f88e38403a9bd024162779149a",
+        "devin_started_at": "2026-06-15T04:05:33Z",
+        "devin_completed_at": "2026-06-15T04:09:05Z",
+        "fixed": false,
+        "fix_time_mins": 4
+      },
+      {
+        "rule": "B324",
+        "severity": "HIGH",
+        "file": "superset/key_value/utils.py",
+        "line": 105,
+        "devin_session_id": "devin-8570a0289ab84423ba3b5fba975c84a5",
+        "devin_started_at": "2026-06-15T04:09:06Z",
+        "devin_completed_at": "2026-06-15T04:12:08Z",
+        "fixed": false,
+        "fix_time_mins": 3
+      },
+      {
+        "rule": "B602",
+        "severity": "HIGH",
+        "file": "superset/utils/core.py",
+        "line": 2200,
+        "devin_session_id": "devin-b4ade5e0511f41a2835db9411eae00e3",
+        "devin_started_at": "2026-06-15T04:12:08Z",
+        "devin_completed_at": "2026-06-15T04:15:10Z",
+        "fixed": false,
+        "fix_time_mins": 3
+      },
+      {
+        "rule": "B608",
+        "severity": "MEDIUM",
+        "file": "superset/views/core.py",
+        "line": 146,
+        "devin_session_id": "devin-fc0d2914f66145fdb442193a6099e1c3",
+        "devin_started_at": "2026-06-15T04:15:10Z",
+        "devin_completed_at": "2026-06-15T04:17:11Z",
+        "fixed": false,
+        "fix_time_mins": 2
+      },
+      {
+        "rule": "B310",
+        "severity": "MEDIUM",
+        "file": "superset/views/core.py",
+        "line": 153,
+        "devin_session_id": "devin-cbc13306ce034e3c9b853ea6b0fe28db",
+        "devin_started_at": "2026-06-15T04:17:12Z",
+        "devin_completed_at": "2026-06-15T04:19:43Z",
+        "fixed": false,
+        "fix_time_mins": 3
+      }
+    ]
   }
 ]
